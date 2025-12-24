@@ -1,0 +1,43 @@
+# Build artifacts
+target/
+debug/
+release/
+
+# Cargo
+Cargo.lock
+**/*.rs.bk
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# GitHub
+.github/
+
+# Cache
+*.cache
+.cache/
+control-system-cache.json
+
+# Logs
+*.log
+logs/
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+*.temp
