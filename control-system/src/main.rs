@@ -125,42 +125,51 @@ async fn run_app(config: Config, log_buffer: LogBuffer) -> Result<()> {
 
     info!("control-system started, entering main loop");
 
-    // Track terminal size for click detection
-    let term_rect = terminal.size()?;
-    let mut term_width = term_rect.width;
-
     // Main event loop
     while state.running {
         let frame_start = Instant::now();
 
         // Poll for terminal events (non-blocking)
-        if event::poll(Duration::from_millis(1))? {
+        // Drain all pending events to prevent lag buildup
+        while event::poll(Duration::from_millis(0))? {
             match event::read()? {
                 Event::Key(key) => {
                     // Only handle key press events (not release)
                     if key.kind == KeyEventKind::Press {
                         let action = Action::from_key_event(key);
-                        let _ = action_tx.send(action).await;
+                        let _ = action_tx.try_send(action);
                     }
                 }
                 Event::Mouse(mouse) => {
-                    // Handle mouse clicks for tab navigation
+                    // Only handle left mouse button clicks (ignore move, drag, scroll)
                     if let MouseEventKind::Down(MouseButton::Left) = mouse.kind {
-                        // Check if click is in header area (first 3 rows)
-                        if mouse.row < 3 {
-                            // Calculate which tab was clicked based on x position
-                            // Tabs are evenly distributed across the width
-                            let tab_count = 4;
-                            let tab_width = term_width / tab_count;
-                            let clicked_tab = (mouse.column / tab_width) as usize;
-                            if clicked_tab < 4 {
-                                let _ = action_tx.send(Action::GoToPage(clicked_tab)).await;
+                        // Check if click is in header area (row 1, inside the border)
+                        if mouse.row == 1 {
+                            // Tab layout after left border (col 1):
+                            // "1:Dashboard | 2:Repos | 3:Activity | 4:Settings"
+                            // Positions: 1-11, 15-21, 25-34, 38-47
+                            let col = mouse.column;
+                            let clicked_tab = if col >= 1 && col <= 14 {
+                                Some(0) // 1:Dashboard
+                            } else if col >= 15 && col <= 24 {
+                                Some(1) // 2:Repos
+                            } else if col >= 25 && col <= 37 {
+                                Some(2) // 3:Activity
+                            } else if col >= 38 {
+                                Some(3) // 4:Settings
+                            } else {
+                                None
+                            };
+                            
+                            if let Some(tab) = clicked_tab {
+                                let _ = action_tx.try_send(Action::GoToPage(tab));
                             }
                         }
                     }
+                    // Ignore all other mouse events (move, scroll, etc.) to prevent lag
                 }
-                Event::Resize(width, _height) => {
-                    term_width = width;
+                Event::Resize(_width, _height) => {
+                    // Terminal resized - nothing special needed
                 }
                 _ => {}
             }
