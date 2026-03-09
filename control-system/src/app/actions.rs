@@ -27,6 +27,14 @@ pub enum Action {
     ToggleHelp,
     /// Toggle animation pause
     TogglePause,
+    /// Spotify: Toggle play/pause
+    SpotifyToggle,
+    /// Spotify: Next track
+    SpotifyNext,
+    /// Spotify: Previous track
+    SpotifyPrev,
+    /// Reset Spotify configuration
+    SpotifyReset,
     /// No action
     None,
 }
@@ -38,10 +46,10 @@ impl Action {
             // Quit
             KeyCode::Char('q') => Action::Quit,
             KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => Action::Quit,
-            
+
             // Refresh
             KeyCode::Char('r') => Action::RefreshGithub,
-            
+
             // Page navigation
             KeyCode::Tab => {
                 if key.modifiers.contains(KeyModifiers::SHIFT) {
@@ -54,27 +62,36 @@ impl Action {
             KeyCode::Char('2') => Action::GoToPage(1),
             KeyCode::Char('3') => Action::GoToPage(2),
             KeyCode::Char('4') => Action::GoToPage(3),
-            
+            KeyCode::Char('5') => Action::GoToPage(4),
+
             // Help
             KeyCode::Char('?') => Action::ToggleHelp,
             KeyCode::Char('h') => Action::ToggleHelp,
-            
+
             // Pause animations
             KeyCode::Char('p') => Action::TogglePause,
-            
+
             // Scrolling
             KeyCode::Up | KeyCode::Char('k') => Action::ScrollUp,
             KeyCode::Down | KeyCode::Char('j') => Action::ScrollDown,
             KeyCode::Left => Action::PrevPage,
             KeyCode::Right => Action::NextPage,
-            
+
             // Selection
             KeyCode::Enter => Action::SelectNext,
-            
+
             // Page up/down for faster scrolling
             KeyCode::PageUp => Action::ScrollUp,
             KeyCode::PageDown => Action::ScrollDown,
-            
+
+            // Spotify controls
+            KeyCode::Char(' ') => Action::SpotifyToggle,
+            KeyCode::Char('>') | KeyCode::Char('.') => Action::SpotifyNext,
+            KeyCode::Char('<') | KeyCode::Char(',') => Action::SpotifyPrev,
+
+            // Reset Spotify (capital S)
+            KeyCode::Char('S') => Action::SpotifyReset,
+
             _ => Action::None,
         }
     }
@@ -92,5 +109,8 @@ pub fn keybind_help() -> Vec<(&'static str, &'static str)> {
         ("Up/k", "Scroll up"),
         ("Dn/j", "Scroll down"),
         ("L/R", "Prev/Next page"),
+        ("Space", "Play/Pause Spotify"),
+        (">/.", "Next track"),
+        ("<", "Prev track"),
     ]
 }

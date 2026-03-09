@@ -7,14 +7,14 @@ authors = ["control-system"]
 
 [dependencies]
 # TUI
-ratatui = "0.29"
+ratatui = "0.30"
 crossterm = "0.28"
 
 # Async runtime
 tokio = { version = "1", features = ["full"] }
 
 # Animations
-tachyonfx = "0.9"
+tachyonfx = "0.25"
 
 # GitHub API
 octocrab = "0.41"
@@ -39,7 +39,31 @@ chrono = { version = "0.4", features = ["serde"] }
 
 # Misc
 dirs = "5"
-futures = "0.3"
+
+# HTTP client for news feed
+reqwest = { version = "0.12", features = ["json"] }
+
+# XML parsing for RSS
+quick-xml = "0.37"
+
+# Random (for Spotify PKCE)
+rand = "0.8"
+
+# Base64 encoding (for Spotify PKCE)
+base64 = "0.22"
+
+# SHA256 (for Spotify PKCE)
+sha2 = "0.10"
+
+# URL encoding
+urlencoding = "2"
+
+# URL parsing
+url = "2"
+
+# Image processing for album art
+image = "0.25"
+ratatui-image = { version = "10", default-features = false, features = ["crossterm", "image-defaults"] }
 
 [dev-dependencies]
 tempfile = "3"

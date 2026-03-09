@@ -3,6 +3,8 @@ pub mod clock;
 pub mod github_overview;
 pub mod help_overlay;
 pub mod log_viewer;
+pub mod news_feed;
 pub mod repo_spotlight;
+pub mod spotify_player;
 pub mod status_bar;
 pub mod system_stats;

@@ -1,5 +1,5 @@
 use ratatui::{
-    layout::Rect,
+    layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
     widgets::{Block, Borders, Paragraph},
@@ -8,6 +8,50 @@ use ratatui::{
 
 use crate::app::AppState;
 use crate::util::format::format_count;
+
+const CAT_1: &str = r#"
+    /\_/\
+   ( o.o )
+    > ^ <
+   /|   |\
+  (_|   |_)
+"#;
+
+const CAT_2: &str = r#"
+   |\      _,,,---,,_
+   /,`.-'`'    -.  ;-;;,_
+  |,4-  ) )-,_..;\ (  `'-'
+ '---''(_/--'  `-'\_)
+"#;
+
+const CAT_3: &str = r#"
+    /\___/\
+   (  o o  )
+   (  =^=  )
+    )     (
+   (       )
+  ( (  )  ( )
+ (__(__)__(__)
+"#;
+
+const CAT_4: &str = r#"
+     /\_/\
+    / o o \
+   (   "   )
+    \~(*)~/
+     // \\
+    ((   ))
+"#;
+
+fn get_ascii_cat() -> &'static str {
+    let idx = (chrono::Utc::now().timestamp() / 600) % 4;
+    match idx {
+        0 => CAT_1,
+        1 => CAT_2,
+        2 => CAT_3,
+        _ => CAT_4,
+    }
+}
 
 /// Render the GitHub overview widget
 pub fn render_github_overview(frame: &mut Frame, area: Rect, state: &AppState) {
@@ -21,9 +65,19 @@ pub fn render_github_overview(frame: &mut Frame, area: Rect, state: &AppState) {
                 .add_modifier(Modifier::BOLD),
         ));
 
+    let inner = block.inner(area);
+    frame.render_widget(block, area);
+
+    // Split inner into left (stats) and right (ASCII cat)
+    let cols = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([Constraint::Percentage(60), Constraint::Percentage(40)])
+        .split(inner);
+
+    // Left side: GitHub stats
     if let Some(ref profile) = state.github.profile {
         let stats = &state.github.stats;
-        
+
         let name_line = Line::from(vec![
             Span::styled(
                 profile.name.as_deref().unwrap_or(&profile.login),
@@ -103,10 +157,8 @@ pub fn render_github_overview(frame: &mut Frame, area: Rect, state: &AppState) {
             status_line,
         ];
 
-        let paragraph = Paragraph::new(text).block(block);
-        frame.render_widget(paragraph, area);
+        frame.render_widget(Paragraph::new(text), cols[0]);
     } else {
-        // No profile loaded yet
         let loading_text = if state.github.status.is_fetching() {
             vec![
                 Line::from(""),
@@ -129,7 +181,20 @@ pub fn render_github_overview(frame: &mut Frame, area: Rect, state: &AppState) {
             ]
         };
 
-        let paragraph = Paragraph::new(loading_text).block(block);
-        frame.render_widget(paragraph, area);
+        frame.render_widget(Paragraph::new(loading_text), cols[0]);
     }
+
+    // Right side: ASCII cat
+    let cat_art = get_ascii_cat();
+    let cat_lines: Vec<Line> = cat_art
+        .lines()
+        .map(|l| Line::from(Span::styled(l, Style::default().fg(Color::Yellow))))
+        .collect();
+
+    let cat_block = Block::default()
+        .borders(Borders::LEFT)
+        .border_style(Style::default().fg(Color::DarkGray));
+    let cat_inner = cat_block.inner(cols[1]);
+    frame.render_widget(cat_block, cols[1]);
+    frame.render_widget(Paragraph::new(cat_lines), cat_inner);
 }

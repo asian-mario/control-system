@@ -41,7 +41,8 @@ impl GithubClient {
 
         info!("Fetching GitHub data for user: {}", self.username);
 
-        // Fetch profile
+        // Fetch profile (non-fatal: continue even if this fails)
+        let mut errors: Vec<String> = Vec::new();
         match self.fetch_profile().await {
             Ok(profile) => {
                 debug!("Fetched profile for {}", profile.login);
@@ -49,8 +50,7 @@ impl GithubClient {
             }
             Err(e) => {
                 error!("Failed to fetch profile: {}", e);
-                state.status = FetchStatus::Error(format!("Profile fetch failed: {}", e));
-                return state;
+                errors.push(format!("profile: {}", e));
             }
         }
 
@@ -62,8 +62,7 @@ impl GithubClient {
             }
             Err(e) => {
                 error!("Failed to fetch repos: {}", e);
-                state.status = FetchStatus::Error(format!("Repos fetch failed: {}", e));
-                return state;
+                errors.push(format!("repos: {}", e));
             }
         }
 
@@ -85,10 +84,7 @@ impl GithubClient {
         // Fetch rate limit
         match self.fetch_rate_limit().await {
             Ok(rate_limit) => {
-                debug!(
-                    "Rate limit: {}/{}",
-                    rate_limit.remaining, rate_limit.limit
-                );
+                debug!("Rate limit: {}/{}", rate_limit.remaining, rate_limit.limit);
                 state.rate_limit = rate_limit;
             }
             Err(e) => {
@@ -99,7 +95,23 @@ impl GithubClient {
         // Compute stats
         state.compute_stats();
         state.last_updated = Some(Utc::now());
-        state.status = FetchStatus::Success;
+        state.status = if errors.is_empty() {
+            FetchStatus::Success
+        } else {
+            // Check if it looks like rate limiting
+            let combined = errors.join("; ");
+            if combined.contains("403") || combined.contains("rate") {
+                FetchStatus::Error("Rate limited (set GITHUB_TOKEN for 5000 req/hr)".to_string())
+            } else {
+                // Truncate to avoid huge error messages in the UI
+                let short = if combined.len() > 80 {
+                    format!("{}...", &combined[..77])
+                } else {
+                    combined
+                };
+                FetchStatus::Error(short)
+            }
+        };
 
         info!(
             "GitHub fetch complete: {} repos, {} stars total",
@@ -156,7 +168,9 @@ impl GithubClient {
                     stargazers_count: repo.stargazers_count.unwrap_or(0) as u32,
                     forks_count: repo.forks_count.unwrap_or(0) as u32,
                     watchers_count: repo.watchers_count.unwrap_or(0) as u32,
-                    language: repo.language.and_then(|v| v.as_str().map(|s| s.to_string())),
+                    language: repo
+                        .language
+                        .and_then(|v| v.as_str().map(|s| s.to_string())),
                     updated_at: repo.updated_at,
                     pushed_at: repo.pushed_at,
                     open_issues_count: repo.open_issues_count.unwrap_or(0) as u32,
@@ -197,11 +211,14 @@ impl GithubClient {
             if let (Some(id), Some(event_type), Some(repo), Some(created_at)) = (
                 event.get("id").and_then(|v| v.as_str()),
                 event.get("type").and_then(|v| v.as_str()),
-                event.get("repo").and_then(|v| v.get("name")).and_then(|v| v.as_str()),
+                event
+                    .get("repo")
+                    .and_then(|v| v.get("name"))
+                    .and_then(|v| v.as_str()),
                 event.get("created_at").and_then(|v| v.as_str()),
             ) {
                 let is_new = !existing_ids.contains(id);
-                
+
                 if let Ok(created_at) = chrono::DateTime::parse_from_rfc3339(created_at) {
                     events.push(GithubEvent {
                         id: id.to_string(),
@@ -220,12 +237,14 @@ impl GithubClient {
     /// Fetch rate limit information
     async fn fetch_rate_limit(&self) -> Result<RateLimit> {
         let rate_limit = self.client.ratelimit().get().await?;
-        
+
         Ok(RateLimit {
             limit: rate_limit.rate.limit as u32,
             remaining: rate_limit.rate.remaining as u32,
-            reset_at: Some(chrono::DateTime::from_timestamp(rate_limit.rate.reset as i64, 0)
-                .unwrap_or_else(|| Utc::now())),
+            reset_at: Some(
+                chrono::DateTime::from_timestamp(rate_limit.rate.reset as i64, 0)
+                    .unwrap_or_else(|| Utc::now()),
+            ),
         })
     }
 }

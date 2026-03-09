@@ -1,4 +1,4 @@
-use sysinfo::{System, CpuRefreshKind, MemoryRefreshKind, RefreshKind};
+use sysinfo::{System, CpuRefreshKind, MemoryRefreshKind, RefreshKind, Components};
 use std::time::Duration;
 use tokio::sync::watch;
 use tracing::debug;
@@ -14,6 +14,7 @@ pub struct SystemState {
     pub hostname: String,
     pub os_name: String,
     pub cpu_count: usize,
+    pub cpu_temp: Option<f32>,
 }
 
 impl SystemState {
@@ -37,6 +38,7 @@ impl SystemState {
 /// System stats collector and poller
 pub struct SystemStats {
     system: System,
+    components: Components,
 }
 
 impl SystemStats {
@@ -47,8 +49,9 @@ impl SystemStats {
                 .with_cpu(CpuRefreshKind::everything())
                 .with_memory(MemoryRefreshKind::everything()),
         );
+        let components = Components::new_with_refreshed_list();
 
-        Self { system }
+        Self { system, components }
     }
 
     /// Collect current system stats
@@ -56,6 +59,7 @@ impl SystemStats {
         // Refresh the data we need
         self.system.refresh_cpu_usage();
         self.system.refresh_memory();
+        self.components.refresh();
 
         let cpu_usage = self.system.global_cpu_usage();
         let memory_used = self.system.used_memory();
@@ -66,6 +70,20 @@ impl SystemStats {
             0.0
         };
 
+        // Get CPU temperature - look for common sensor names
+        let cpu_temp = self.components
+            .iter()
+            .find(|c| {
+                let label = c.label().to_lowercase();
+                label.contains("cpu") || 
+                label.contains("core") || 
+                label.contains("package") ||
+                label.contains("k10temp") ||
+                label.contains("coretemp") ||
+                label.contains("thermal")
+            })
+            .map(|c| c.temperature());
+
         SystemState {
             cpu_usage,
             memory_used,
@@ -75,6 +93,7 @@ impl SystemStats {
             hostname: System::host_name().unwrap_or_else(|| "unknown".to_string()),
             os_name: System::name().unwrap_or_else(|| "unknown".to_string()),
             cpu_count: self.system.cpus().len(),
+            cpu_temp,
         }
     }
 

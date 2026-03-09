@@ -1,4 +1,5 @@
 use anyhow::{anyhow, Result};
+use serde::{Deserialize, Serialize};
 use std::env;
 use std::path::PathBuf;
 
@@ -18,12 +19,25 @@ pub struct Config {
 }
 
 impl Config {
-    /// Load configuration from environment variables
-    pub fn from_env() -> Result<Self> {
+    /// Load configuration from environment variables.
+    /// Returns Ok(None) if GITHUB_USER is missing from both env and saved settings.
+    pub fn from_env_optional() -> Result<Option<Self>> {
+        let github_user = match env::var("GITHUB_USER") {
+            Ok(u) if !u.is_empty() => u,
+            _ => {
+                // Try loading from saved settings
+                match AppSettings::load() {
+                    Some(settings) if !settings.github_user.is_empty() => settings.github_user,
+                    _ => return Ok(None),
+                }
+            }
+        };
+        Ok(Some(Self::build_with_user(github_user)?))
+    }
+
+    /// Build config with a known github_user
+    pub fn build_with_user(github_user: String) -> Result<Self> {
         let github_token = env::var("GITHUB_TOKEN").ok();
-        
-        let github_user = env::var("GITHUB_USER")
-            .map_err(|_| anyhow!("GITHUB_USER environment variable is required"))?;
 
         let refresh_secs = env::var("CONTROL_SYSTEM_REFRESH_SECS")
             .ok()
@@ -45,6 +59,14 @@ impl Config {
         })
     }
 
+    /// Load configuration from environment variables (requires GITHUB_USER)
+    pub fn from_env() -> Result<Self> {
+        match Self::from_env_optional()? {
+            Some(config) => Ok(config),
+            None => Err(anyhow!("GITHUB_USER environment variable is required")),
+        }
+    }
+
     /// Determine the cache file path
     fn determine_cache_path() -> PathBuf {
         // Try ~/.config/control-system/cache.json first
@@ -62,6 +84,38 @@ impl Config {
     /// Check if we have a GitHub token configured
     pub fn has_token(&self) -> bool {
         self.github_token.is_some()
+    }
+}
+
+/// Persistent app settings saved to disk
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct AppSettings {
+    pub github_user: String,
+}
+
+impl AppSettings {
+    /// Path to the settings file
+    fn path() -> PathBuf {
+        if let Some(config_dir) = dirs::config_dir() {
+            let app_dir = config_dir.join("control-system");
+            let _ = std::fs::create_dir_all(&app_dir);
+            app_dir.join("settings.json")
+        } else {
+            PathBuf::from("./control-system-settings.json")
+        }
+    }
+
+    /// Load settings from disk
+    pub fn load() -> Option<Self> {
+        let data = std::fs::read_to_string(Self::path()).ok()?;
+        serde_json::from_str(&data).ok()
+    }
+
+    /// Save settings to disk
+    pub fn save(&self) -> Result<()> {
+        let data = serde_json::to_string_pretty(self)?;
+        std::fs::write(Self::path(), data)?;
+        Ok(())
     }
 }
 

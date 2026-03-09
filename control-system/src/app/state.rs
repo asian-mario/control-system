@@ -1,5 +1,7 @@
 use crate::app::logs::LogBuffer;
 use crate::github::GithubState;
+use crate::news::NewsFeed;
+use crate::spotify::SpotifyState;
 use crate::system::stats::SystemState;
 
 /// The current page being displayed
@@ -9,6 +11,7 @@ pub enum Page {
     Dashboard,
     Repositories,
     Activity,
+    Spotify,
     Settings,
 }
 
@@ -18,6 +21,7 @@ impl Page {
             Page::Dashboard => "Dashboard",
             Page::Repositories => "Repositories",
             Page::Activity => "Activity Feed",
+            Page::Spotify => "Spotify",
             Page::Settings => "Settings & Help",
         }
     }
@@ -27,7 +31,8 @@ impl Page {
             Page::Dashboard => 0,
             Page::Repositories => 1,
             Page::Activity => 2,
-            Page::Settings => 3,
+            Page::Spotify => 3,
+            Page::Settings => 4,
         }
     }
 
@@ -36,17 +41,18 @@ impl Page {
             0 => Page::Dashboard,
             1 => Page::Repositories,
             2 => Page::Activity,
-            3 => Page::Settings,
+            3 => Page::Spotify,
+            4 => Page::Settings,
             _ => Page::Dashboard,
         }
     }
 
     pub fn next(&self) -> Self {
-        Self::from_index((self.index() + 1) % 4)
+        Self::from_index((self.index() + 1) % 5)
     }
 
     pub fn prev(&self) -> Self {
-        Self::from_index((self.index() + 3) % 4)
+        Self::from_index((self.index() + 4) % 5)
     }
 }
 
@@ -114,11 +120,11 @@ impl FxState {
     /// Update animation state for a new frame
     pub fn tick(&mut self, delta_ms: f32) {
         self.frame_count += 1;
-        
+
         if self.should_animate() {
             // Pulse animation (breathing effect)
             self.pulse_phase = (self.pulse_phase + delta_ms * 0.003) % (2.0 * std::f32::consts::PI);
-            
+
             // Shimmer animation
             self.shimmer_offset = (self.shimmer_offset + delta_ms * 0.05) % 100.0;
         }
@@ -150,6 +156,8 @@ impl FxState {
 pub struct AppState {
     pub github: GithubState,
     pub system: SystemState,
+    pub news: NewsFeed,
+    pub spotify: SpotifyState,
     pub ui: UiState,
     pub fx: FxState,
     pub log_buffer: LogBuffer,
@@ -161,6 +169,8 @@ impl Default for AppState {
         Self {
             github: GithubState::default(),
             system: SystemState::default(),
+            news: NewsFeed::default(),
+            spotify: SpotifyState::default(),
             ui: UiState::default(),
             fx: FxState::default(),
             log_buffer: LogBuffer::new(),
@@ -186,11 +196,14 @@ impl AppState {
     /// Get status message for the status bar
     pub fn status_message(&self) -> String {
         use crate::github::FetchStatus;
-        
+
         match &self.github.status {
             FetchStatus::Idle => {
                 if let Some(last_updated) = self.github.last_updated {
-                    format!("Last updated: {}", crate::util::time::format_relative(last_updated))
+                    format!(
+                        "Last updated: {}",
+                        crate::util::time::format_relative(last_updated)
+                    )
                 } else {
                     "No data loaded".to_string()
                 }
@@ -198,7 +211,10 @@ impl AppState {
             FetchStatus::Fetching => "Fetching GitHub data...".to_string(),
             FetchStatus::Success => {
                 if let Some(last_updated) = self.github.last_updated {
-                    format!("Updated: {}", crate::util::time::format_relative(last_updated))
+                    format!(
+                        "Updated: {}",
+                        crate::util::time::format_relative(last_updated)
+                    )
                 } else {
                     "Data loaded".to_string()
                 }

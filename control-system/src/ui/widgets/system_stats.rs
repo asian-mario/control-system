@@ -24,16 +24,30 @@ pub fn render_system_stats(frame: &mut Frame, area: Rect, state: &AppState) {
     let sys = &state.system;
 
     // CPU usage bar
-    let cpu_bar = create_bar(sys.cpu_usage as f64, 100.0, 15);
+    let cpu_bar = create_bar(sys.cpu_usage as f64, 100.0, 12);
     let cpu_color = usage_color(sys.cpu_usage as f64);
 
     // Memory usage bar
-    let mem_bar = create_bar(sys.memory_percent as f64, 100.0, 15);
+    let mem_bar = create_bar(sys.memory_percent as f64, 100.0, 12);
     let mem_color = usage_color(sys.memory_percent as f64);
+
+    // Temperature display
+    let (temp_str, temp_color) = if let Some(temp) = sys.cpu_temp {
+        let color = if temp >= 80.0 {
+            Color::Red
+        } else if temp >= 60.0 {
+            Color::Yellow
+        } else {
+            Color::Green
+        };
+        (format!("{:.0}C", temp), color)
+    } else {
+        ("N/A".to_string(), Color::DarkGray)
+    };
 
     let text = vec![
         Line::from(""),
-        // CPU
+        // CPU with temperature
         Line::from(vec![
             Span::styled(" CPU ", Style::default().fg(Color::White)),
             Span::styled(cpu_bar, Style::default().fg(cpu_color)),
@@ -41,6 +55,10 @@ pub fn render_system_stats(frame: &mut Frame, area: Rect, state: &AppState) {
                 format!(" {:5.1}%", sys.cpu_usage),
                 Style::default().fg(cpu_color),
             ),
+        ]),
+        Line::from(vec![
+            Span::styled("      Temp: ", Style::default().fg(Color::DarkGray)),
+            Span::styled(&temp_str, Style::default().fg(temp_color)),
         ]),
         Line::from(""),
         // Memory
@@ -66,19 +84,8 @@ pub fn render_system_stats(frame: &mut Frame, area: Rect, state: &AppState) {
         Line::from(""),
         // Uptime
         Line::from(vec![
-            Span::styled(" Uptime: ", Style::default().fg(Color::White)),
-            Span::styled(
-                sys.uptime_formatted(),
-                Style::default().fg(Color::Green),
-            ),
-        ]),
-        // Host info
-        Line::from(vec![
-            Span::styled(" Host: ", Style::default().fg(Color::White)),
-            Span::styled(
-                &sys.hostname,
-                Style::default().fg(Color::Cyan),
-            ),
+            Span::styled(" Up: ", Style::default().fg(Color::White)),
+            Span::styled(sys.uptime_formatted(), Style::default().fg(Color::Green)),
         ]),
     ];
 
