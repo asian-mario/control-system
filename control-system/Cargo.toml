@@ -40,8 +40,8 @@ chrono = { version = "0.4", features = ["serde"] }
 # Misc
 dirs = "5"
 
-# HTTP client for news feed
-reqwest = { version = "0.12", features = ["json"] }
+# HTTP client for news feed (rustls avoids OpenSSL cross-compile issues)
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
 
 # XML parsing for RSS
 quick-xml = "0.37"

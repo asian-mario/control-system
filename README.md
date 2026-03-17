@@ -45,7 +45,21 @@ cargo run
 
 # Release build (optimized)
 cargo build --release
-./target/release/deskpilot
+./target/release/control-system
+```
+
+### Downloading (Raspberry Pi 3 / armv7)
+
+```bash
+wget https://github.com/asian-mario/control-system/releases/download/[VERSION]/control-system-linux-armv7-rpi3.tar.gz
+tar -xzf control-system-linux-armv7-rpi3.tar.gz
+sudo mv control-system /usr/local/bin/
+```
+
+Run it from anywhere:
+
+```bash
+control-system
 ```
 
 ### Cross Compile for Raspberry Pi
