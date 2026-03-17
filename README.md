@@ -105,6 +105,9 @@ cross build --release --target armv7-unknown-linux-gnueabihf
 | `DESKPILOT_REFRESH_SECS` | Auto-refresh interval (seconds) | 60 |
 | `DESKPILOT_REDUCED_MOTION` | Disable animations | false |
 
+## Spotify
+- ClientID: `7c9ced4994734e0f850754b76616cc45`
+
 ## Cache Location
 
 Cache is stored at:
