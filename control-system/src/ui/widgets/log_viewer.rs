@@ -1,12 +1,13 @@
 use ratatui::prelude::*;
-use ratatui::widgets::{Block, Borders, Paragraph, Wrap};
+use ratatui::widgets::{Paragraph, Wrap};
 
 use crate::app::AppState;
+use crate::ui::theme;
 
 /// Renders the log messages widget
 pub fn render(frame: &mut Frame, area: Rect, state: &AppState) {
     let messages = state.log_buffer.get_messages();
-    
+
     let log_text: Vec<Line> = messages
         .iter()
         .rev()
@@ -14,13 +15,13 @@ pub fn render(frame: &mut Frame, area: Rect, state: &AppState) {
         .rev()
         .map(|msg| {
             let level_style = match msg.level.as_str() {
-                "ERROR" => Style::default().fg(Color::Red),
-                "WARN" => Style::default().fg(Color::Yellow),
-                "INFO" => Style::default().fg(Color::Cyan),
-                "DEBUG" => Style::default().fg(Color::Gray),
-                _ => Style::default().fg(Color::White),
+                "ERROR" => Style::default().fg(theme::ERROR),
+                "WARN" => Style::default().fg(theme::WARNING),
+                "INFO" => Style::default().fg(theme::ACCENT),
+                "DEBUG" => theme::secondary(),
+                _ => theme::primary(),
             };
-            
+
             Line::from(vec![
                 Span::styled(format!("[{}] ", msg.level), level_style),
                 Span::raw(&msg.message),
@@ -28,13 +29,11 @@ pub fn render(frame: &mut Frame, area: Rect, state: &AppState) {
         })
         .collect();
 
-    let block = Block::default()
-        .title(" Logs ")
-        .borders(Borders::ALL)
-        .border_style(Style::default().fg(Color::DarkGray));
+    let block = theme::card("Recent Log");
 
     let paragraph = Paragraph::new(log_text)
         .block(block)
+        .style(theme::secondary())
         .wrap(Wrap { trim: true });
 
     frame.render_widget(paragraph, area);

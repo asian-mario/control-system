@@ -7,6 +7,15 @@ pub struct SpotifyState {
     pub player: PlayerState,
     pub connected: bool,
     pub error: Option<String>,
+    pub rate_limited_until: Option<DateTime<Utc>>,
+}
+
+impl SpotifyState {
+    pub fn retry_after_seconds(&self) -> Option<i64> {
+        let until = self.rate_limited_until?;
+        let secs = (until - Utc::now()).num_seconds();
+        Some(secs.max(0))
+    }
 }
 
 /// Current player state from Spotify

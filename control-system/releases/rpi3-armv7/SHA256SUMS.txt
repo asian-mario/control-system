@@ -1,2 +1,2 @@
-0ac9ad5c219154b74006544defa14f504c51e0acce119941d299fd91e247de40  releases/rpi3-armv7/control-system
-8edc17d447a0b8d53ea21ab07c636bfa63de685d8cab93b9dcfd56e0993feecf  releases/rpi3-armv7/control-system-linux-armv7-rpi3.tar.gz
+8cc04779d663843039420e527860c526045c4c6948d54c5958adf048af42781b  releases/rpi3-armv7/control-system
+d968197862d0acdcd842021df511ab3ad6e90d525393c4d37fc0891c164eea07  releases/rpi3-armv7/control-system-linux-armv7-rpi3.tar.gz

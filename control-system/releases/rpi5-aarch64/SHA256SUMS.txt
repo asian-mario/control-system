@@ -1,0 +1,2 @@
+e9f91affc80948b0543babc9b7deb230ceb631b3116d9ab47bdbfeafffc89b43  releases/rpi5-aarch64/control-system
+5d8e1003811b4f5118205cd89ec80ab1739b2c79effce6967e2f5f12a2b41902  releases/rpi5-aarch64/control-system-linux-aarch64-rpi5.tar.gz

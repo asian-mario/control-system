@@ -1,6 +1,6 @@
 use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout, Rect},
-    style::{Color, Modifier, Style},
+    style::{Modifier, Style},
     text::{Line, Span},
     widgets::{Block, Borders, Tabs},
     Frame,
@@ -11,11 +11,13 @@ use ratatui_image::protocol::StatefulProtocol;
 
 use crate::app::{AppState, Page};
 
+use super::theme;
 use super::widgets::{
     activity_feed::render_activity_feed, clock::render_clock,
     github_overview::render_github_overview, help_overlay::render_help_overlay, log_viewer,
     news_feed::render_news_feed, spotify_player::render_spotify_player,
     status_bar::render_status_bar, system_stats::render_system_stats,
+    visualizer::render_visualizer,
 };
 
 /// Main render function for the application
@@ -27,13 +29,18 @@ pub fn render_app(
 ) {
     let size = frame.area();
 
-    // Main layout: header, content, status bar
+    frame.render_widget(Block::default().style(theme::screen()), size);
+
+    // Keep the header at row 0 so the existing touchscreen tab hit zones
+    // remain stable. The spacer rows give the cards room to breathe.
     let main_chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
             Constraint::Length(3), // Header with tabs
+            Constraint::Length(1), // Visual gutter
             Constraint::Min(10),   // Content area
-            Constraint::Length(3), // Status bar
+            Constraint::Length(1), // Visual gutter
+            Constraint::Length(1), // Status bar
         ])
         .split(size);
 
@@ -41,10 +48,10 @@ pub fn render_app(
     render_header(frame, main_chunks[0], state);
 
     // Render current page content
-    render_page_content(frame, main_chunks[1], state, effects, album_art_proto);
+    render_page_content(frame, main_chunks[2], state, effects, album_art_proto);
 
     // Render status bar
-    render_status_bar(frame, main_chunks[2], state);
+    render_status_bar(frame, main_chunks[4], state);
 
     // Render help overlay if active
     if state.ui.show_help_overlay {
@@ -63,21 +70,19 @@ pub fn render_app(
 /// Render the header with navigation tabs
 fn render_header(frame: &mut Frame, area: Rect, state: &AppState) {
     let titles: Vec<Line> = vec![
-        "1:Dashboard",
-        "2:Repos",
-        "3:Activity",
-        "4:Spotify",
-        "5:Settings",
+        "1 Dashboard",
+        "2 Repos",
+        "3 Activity",
+        "4 Spotify",
+        "5 Settings",
     ]
     .iter()
     .enumerate()
     .map(|(i, t)| {
         let style = if i == state.ui.current_page.index() {
-            Style::default()
-                .fg(Color::Cyan)
-                .add_modifier(Modifier::BOLD)
+            theme::selected()
         } else {
-            Style::default().fg(Color::DarkGray)
+            theme::secondary()
         };
         Line::from(Span::styled(*t, style))
     })
@@ -87,22 +92,15 @@ fn render_header(frame: &mut Frame, area: Rect, state: &AppState) {
         .block(
             Block::default()
                 .borders(Borders::ALL)
-                .border_style(Style::default().fg(Color::Cyan))
-                .title(Span::styled(
-                    " control-system ",
-                    Style::default()
-                        .fg(Color::Cyan)
-                        .add_modifier(Modifier::BOLD),
-                )),
+                .border_type(ratatui::widgets::BorderType::Rounded)
+                .border_style(Style::default().fg(theme::DIVIDER))
+                .style(theme::surface())
+                .title(Span::styled(" DeskPilot ", theme::title())),
         )
         .select(state.ui.current_page.index())
-        .style(Style::default().fg(Color::White))
-        .highlight_style(
-            Style::default()
-                .fg(Color::Cyan)
-                .add_modifier(Modifier::BOLD),
-        )
-        .divider(Span::raw(" | "));
+        .style(theme::secondary())
+        .highlight_style(theme::selected())
+        .divider(Span::styled("   ", theme::surface()));
 
     frame.render_widget(tabs, area);
 }
@@ -116,7 +114,7 @@ fn render_page_content(
     album_art_proto: &mut Option<StatefulProtocol>,
 ) {
     match state.ui.current_page {
-        Page::Dashboard => render_dashboard(frame, area, state, effects, album_art_proto),
+        Page::Dashboard => render_dashboard(frame, area, state, album_art_proto),
         Page::Repositories => render_repositories_page(frame, area, state),
         Page::Activity => render_activity_page(frame, area, state, effects),
         Page::Spotify => render_spotify_page(frame, area, state, album_art_proto),
@@ -129,33 +127,40 @@ fn render_dashboard(
     frame: &mut Frame,
     area: Rect,
     state: &AppState,
-    effects: &mut Vec<Effect>,
     album_art_proto: &mut Option<StatefulProtocol>,
 ) {
     // Split into left and right columns
+    let dashboard_area = area.inner(ratatui::layout::Margin {
+        horizontal: 1,
+        vertical: 0,
+    });
+
     let columns = Layout::default()
         .direction(Direction::Horizontal)
         .constraints([Constraint::Percentage(65), Constraint::Percentage(35)])
-        .split(area);
+        .spacing(1)
+        .split(dashboard_area);
 
-    // Left column: top row (overview + activity), spotify player, log viewer
+    // Left column: top row (overview + visualizer), spotify player, log viewer
     let left_chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Percentage(30), // GitHub overview + Activity
+            Constraint::Percentage(30), // GitHub overview + visualizer
             Constraint::Percentage(50), // Spotify player
             Constraint::Percentage(20), // Log viewer
         ])
+        .spacing(1)
         .split(columns[0]);
 
-    // Split top row into GitHub Overview (left) and Activity Feed (right)
+    // Split top row into GitHub overview (left) and ambient visualizer (right).
     let top_row = Layout::default()
         .direction(Direction::Horizontal)
         .constraints([Constraint::Percentage(55), Constraint::Percentage(45)])
+        .spacing(1)
         .split(left_chunks[0]);
 
     render_github_overview(frame, top_row[0], state);
-    render_activity_feed(frame, top_row[1], state, effects);
+    render_visualizer(frame, top_row[1], state);
     render_spotify_player(frame, left_chunks[1], state, album_art_proto);
     log_viewer::render(frame, left_chunks[2], state);
 
@@ -167,6 +172,7 @@ fn render_dashboard(
             Constraint::Min(8),     // News feed
             Constraint::Length(12), // System stats
         ])
+        .spacing(1)
         .split(columns[1]);
 
     render_clock(frame, right_chunks[0], state);
@@ -178,21 +184,16 @@ fn render_dashboard(
 fn render_repositories_page(frame: &mut Frame, area: Rect, state: &AppState) {
     use ratatui::widgets::{List, ListItem, Paragraph};
 
-    let block = Block::default()
-        .borders(Borders::ALL)
-        .border_style(Style::default().fg(Color::Cyan))
-        .title(Span::styled(
-            " Repositories ",
-            Style::default()
-                .fg(Color::Yellow)
-                .add_modifier(Modifier::BOLD),
-        ));
+    let page_area = area.inner(ratatui::layout::Margin {
+        horizontal: 1,
+        vertical: 0,
+    });
 
     if state.github.repos.is_empty() {
         let empty = Paragraph::new("No repositories loaded yet...")
-            .block(block)
-            .style(Style::default().fg(Color::DarkGray));
-        frame.render_widget(empty, area);
+            .block(theme::card("Repositories"))
+            .style(theme::secondary());
+        frame.render_widget(empty, page_area);
         return;
     }
 
@@ -200,20 +201,11 @@ fn render_repositories_page(frame: &mut Frame, area: Rect, state: &AppState) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
-        .margin(1)
-        .split(area);
-
-    // Draw outer block
-    frame.render_widget(block, area);
+        .spacing(1)
+        .split(page_area);
 
     // Top starred repos
-    let starred_block = Block::default()
-        .borders(Borders::ALL)
-        .border_style(Style::default().fg(Color::DarkGray))
-        .title(Span::styled(
-            " [*] Top Starred ",
-            Style::default().fg(Color::Yellow),
-        ));
+    let starred_block = theme::card("★  Top Starred");
 
     let starred_repos = state.github.top_repos_by_stars(10);
     let starred_items: Vec<ListItem> = starred_repos
@@ -223,12 +215,12 @@ fn render_repositories_page(frame: &mut Frame, area: Rect, state: &AppState) {
             let line = Line::from(vec![
                 Span::styled(
                     format!("*{:<4}", repo.stargazers_count),
-                    Style::default().fg(Color::Yellow),
+                    Style::default().fg(theme::WARNING),
                 ),
                 Span::raw(" "),
-                Span::styled(&repo.name, Style::default().fg(Color::Cyan)),
+                Span::styled(&repo.name, theme::primary()),
                 Span::raw(" "),
-                Span::styled(format!("[{}]", lang), Style::default().fg(Color::DarkGray)),
+                Span::styled(format!("{}", lang), theme::secondary()),
             ]);
             ListItem::new(line)
         })
@@ -238,13 +230,7 @@ fn render_repositories_page(frame: &mut Frame, area: Rect, state: &AppState) {
     frame.render_widget(starred_list, chunks[0]);
 
     // Recently updated repos
-    let recent_block = Block::default()
-        .borders(Borders::ALL)
-        .border_style(Style::default().fg(Color::DarkGray))
-        .title(Span::styled(
-            " [>] Recently Updated ",
-            Style::default().fg(Color::Green),
-        ));
+    let recent_block = theme::card("Recently Updated");
 
     let recent_repos = state.github.recently_updated_repos(10);
     let recent_items: Vec<ListItem> = recent_repos
@@ -255,9 +241,9 @@ fn render_repositories_page(frame: &mut Frame, area: Rect, state: &AppState) {
                 .map(|t| crate::util::time::format_relative(t))
                 .unwrap_or_else(|| "???".to_string());
             let line = Line::from(vec![
-                Span::styled(&repo.name, Style::default().fg(Color::Cyan)),
+                Span::styled(&repo.name, theme::primary()),
                 Span::raw(" "),
-                Span::styled(updated, Style::default().fg(Color::DarkGray)),
+                Span::styled(updated, theme::secondary()),
             ]);
             ListItem::new(line)
         })
@@ -286,35 +272,36 @@ fn render_spotify_page(
 ) {
     use ratatui::widgets::Paragraph;
 
-    let outer = Block::default()
-        .borders(Borders::ALL)
-        .border_style(Style::default().fg(Color::Green))
-        .title(Span::styled(
-            " Spotify ",
-            Style::default()
-                .fg(Color::Green)
-                .add_modifier(Modifier::BOLD),
-        ));
+    let page_area = area.inner(ratatui::layout::Margin {
+        horizontal: 1,
+        vertical: 0,
+    });
+    let outer = theme::card("Now Playing");
 
     if !state.spotify.connected {
-        let msg = if let Some(ref err) = state.spotify.error {
+        let msg = if let Some(secs) = state.spotify.retry_after_seconds() {
+            format!("Spotify rate-limited. Retry in {}s", secs)
+        } else if let Some(ref err) = state.spotify.error {
             format!("Not connected: {}", err)
         } else {
             "Spotify not configured. Press S in Settings to set up.".to_string()
         };
-        let p = Paragraph::new(msg)
-            .block(outer)
-            .style(Style::default().fg(Color::DarkGray));
-        frame.render_widget(p, area);
+        let p = Paragraph::new(msg).block(outer).style(theme::secondary());
+        frame.render_widget(p, page_area);
         return;
     }
 
     let player = &state.spotify.player;
-    let inner = outer.inner(area);
-    frame.render_widget(outer, area);
+    let inner = outer.inner(page_area);
+    frame.render_widget(outer, page_area);
 
     if player.track_name.is_empty() {
-        let p = Paragraph::new("No track playing").style(Style::default().fg(Color::DarkGray));
+        let no_track_msg = if let Some(secs) = state.spotify.retry_after_seconds() {
+            format!("No track playing (rate-limited, retry in {}s)", secs)
+        } else {
+            "No track playing".to_string()
+        };
+        let p = Paragraph::new(no_track_msg).style(theme::secondary());
         frame.render_widget(p, inner);
         return;
     }
@@ -323,18 +310,11 @@ fn render_spotify_page(
     let columns = Layout::default()
         .direction(Direction::Horizontal)
         .constraints([Constraint::Percentage(30), Constraint::Percentage(70)])
+        .spacing(1)
         .split(inner);
 
     // LEFT: Up Next queue panel
-    let queue_block = Block::default()
-        .borders(Borders::ALL)
-        .border_style(Style::default().fg(Color::DarkGray))
-        .title(Span::styled(
-            " Up Next ",
-            Style::default()
-                .fg(Color::Yellow)
-                .add_modifier(Modifier::BOLD),
-        ));
+    let queue_block = theme::card("Up Next");
     let queue_inner = queue_block.inner(columns[0]);
     frame.render_widget(queue_block, columns[0]);
 
@@ -345,17 +325,14 @@ fn render_spotify_page(
         queue_lines.push(Line::from(""));
         queue_lines.push(Line::from(Span::styled(
             "  nothing here yet.",
-            Style::default().fg(Color::DarkGray),
+            theme::secondary(),
         )));
     } else {
         for (i, item) in player.queue.iter().enumerate() {
-            let num_span = Span::styled(
-                format!(" {:>2}. ", i + 1),
-                Style::default().fg(Color::DarkGray),
-            );
+            let num_span = Span::styled(format!(" {:>2}. ", i + 1), theme::secondary());
             let name_span = Span::styled(
                 truncate_str_local(&item.name, max_qw.saturating_sub(6)),
-                Style::default().fg(Color::White),
+                theme::primary(),
             );
             queue_lines.push(Line::from(vec![num_span, name_span]));
             queue_lines.push(Line::from(Span::styled(
@@ -363,7 +340,7 @@ fn render_spotify_page(
                     "      {}",
                     truncate_str_local(&item.artist, max_qw.saturating_sub(7))
                 ),
-                Style::default().fg(Color::DarkGray),
+                theme::secondary(),
             )));
         }
     }
@@ -380,15 +357,7 @@ fn render_spotify_page(
         .split(columns[1]);
 
     // Now Playing area: art (left) + info (right)
-    let np_block = Block::default()
-        .borders(Borders::ALL)
-        .border_style(Style::default().fg(Color::DarkGray))
-        .title(Span::styled(
-            " Now Playing ",
-            Style::default()
-                .fg(Color::Green)
-                .add_modifier(Modifier::BOLD),
-        ));
+    let np_block = theme::card("Playing");
     let np_inner = np_block.inner(right_rows[0]);
     frame.render_widget(np_block, right_rows[0]);
 
@@ -432,20 +401,16 @@ fn render_spotify_page(
     let mut info_lines = vec![
         Line::from(Span::styled(
             truncate_str_local(&player.track_name, max_w.saturating_sub(1)),
-            Style::default()
-                .fg(Color::White)
-                .add_modifier(Modifier::BOLD | Modifier::UNDERLINED),
+            theme::title(),
         )),
         Line::from(""),
         Line::from(Span::styled(
             truncate_str_local(&player.album_name, max_w.saturating_sub(1)),
-            Style::default()
-                .fg(Color::Cyan)
-                .add_modifier(Modifier::BOLD),
+            theme::primary().add_modifier(Modifier::BOLD),
         )),
         Line::from(Span::styled(
             truncate_str_local(&player.artist_name, max_w.saturating_sub(1)),
-            Style::default().fg(Color::Green),
+            theme::secondary(),
         )),
     ];
 
@@ -468,12 +433,12 @@ fn render_spotify_page(
         let filled = (player.progress_fraction() * bar_w as f64) as usize;
         let empty = bar_w.saturating_sub(filled);
         let prog_line = Line::from(vec![
-            Span::styled(&time_left, Style::default().fg(Color::DarkGray)),
+            Span::styled(&time_left, theme::secondary()),
             Span::raw(" "),
-            Span::styled("#".repeat(filled), Style::default().fg(Color::Green)),
-            Span::styled("-".repeat(empty), Style::default().fg(Color::DarkGray)),
+            Span::styled("━".repeat(filled), theme::accent()),
+            Span::styled("─".repeat(empty), Style::default().fg(theme::DIVIDER)),
             Span::raw(" "),
-            Span::styled(&time_right, Style::default().fg(Color::DarkGray)),
+            Span::styled(&time_right, theme::secondary()),
         ]);
         frame.render_widget(Paragraph::new(prog_line), prog_area);
     }
@@ -487,9 +452,9 @@ fn render_spotify_page(
     let ctrl_area = ctrl_rows[1];
 
     let play_icon = if player.is_playing {
-        "  | |  "
+        "  ❚❚  "
     } else {
-        "  > > >"
+        "  ▶  "
     };
     let ctrl_cols = Layout::default()
         .direction(Direction::Horizontal)
@@ -512,20 +477,20 @@ fn render_spotify_page(
         next_area: Some(ctrl_cols[5]),
     });
 
-    let btn = Style::default().bg(Color::DarkGray);
+    let btn = theme::selected();
     let prev_w = Paragraph::new(Line::from(Span::styled(
-        " |<< ",
-        btn.fg(Color::Cyan).add_modifier(Modifier::BOLD),
+        "  ◀◀  ",
+        btn.fg(theme::PRIMARY).add_modifier(Modifier::BOLD),
     )))
     .alignment(Alignment::Center);
     let toggle_w = Paragraph::new(Line::from(Span::styled(
         play_icon,
-        btn.fg(Color::Green).add_modifier(Modifier::BOLD),
+        btn.fg(theme::ACCENT).add_modifier(Modifier::BOLD),
     )))
     .alignment(Alignment::Center);
     let next_w = Paragraph::new(Line::from(Span::styled(
-        " >>| ",
-        btn.fg(Color::Cyan).add_modifier(Modifier::BOLD),
+        "  ▶▶  ",
+        btn.fg(theme::PRIMARY).add_modifier(Modifier::BOLD),
     )))
     .alignment(Alignment::Center);
 
@@ -548,6 +513,10 @@ fn truncate_str_local(s: &str, max_len: usize) -> String {
 fn render_settings_page(frame: &mut Frame, area: Rect, state: &AppState) {
     use ratatui::widgets::Paragraph;
 
+    let page_area = area.inner(ratatui::layout::Margin {
+        horizontal: 1,
+        vertical: 0,
+    });
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
@@ -556,33 +525,19 @@ fn render_settings_page(frame: &mut Frame, area: Rect, state: &AppState) {
             Constraint::Length(6),  // Spotify settings
             Constraint::Min(5),     // Rate limit info
         ])
-        .margin(1)
-        .split(area);
-
-    let block = Block::default()
-        .borders(Borders::ALL)
-        .border_style(Style::default().fg(Color::Cyan))
-        .title(Span::styled(
-            " Settings & Help ",
-            Style::default()
-                .fg(Color::Magenta)
-                .add_modifier(Modifier::BOLD),
-        ));
-    frame.render_widget(block, area);
+        .spacing(1)
+        .split(page_area);
 
     // Keybinds section
-    let keybinds_block = Block::default()
-        .borders(Borders::ALL)
-        .border_style(Style::default().fg(Color::DarkGray))
-        .title(" Keyboard Controls ");
+    let keybinds_block = theme::card("Keyboard Controls");
 
     let keybind_text = crate::app::actions::keybind_help()
         .iter()
         .map(|(key, desc)| {
             Line::from(vec![
-                Span::styled(format!("{:>8}", key), Style::default().fg(Color::Cyan)),
+                Span::styled(format!("{:>8}", key), theme::accent()),
                 Span::raw("  "),
-                Span::styled(*desc, Style::default().fg(Color::White)),
+                Span::styled(*desc, theme::primary()),
             ])
         })
         .collect::<Vec<_>>();
@@ -591,24 +546,21 @@ fn render_settings_page(frame: &mut Frame, area: Rect, state: &AppState) {
     frame.render_widget(keybinds, chunks[0]);
 
     // Settings section
-    let settings_block = Block::default()
-        .borders(Borders::ALL)
-        .border_style(Style::default().fg(Color::DarkGray))
-        .title(" Animation Settings ");
+    let settings_block = theme::card("Motion");
 
     let motion_status = if state.fx.animations_paused {
-        Span::styled("PAUSED", Style::default().fg(Color::Yellow))
+        Span::styled("PAUSED", Style::default().fg(theme::WARNING))
     } else if state.fx.reduced_motion {
-        Span::styled("REDUCED", Style::default().fg(Color::Yellow))
+        Span::styled("REDUCED", Style::default().fg(theme::WARNING))
     } else {
-        Span::styled("ENABLED", Style::default().fg(Color::Green))
+        Span::styled("ENABLED", Style::default().fg(theme::SUCCESS))
     };
 
     let settings_text = vec![
         Line::from(vec![Span::raw("Animations: "), motion_status]),
         Line::from(vec![
             Span::raw("Press "),
-            Span::styled("p", Style::default().fg(Color::Cyan)),
+            Span::styled("p", theme::accent()),
             Span::raw(" to toggle animation pause"),
         ]),
     ];
@@ -617,24 +569,21 @@ fn render_settings_page(frame: &mut Frame, area: Rect, state: &AppState) {
     frame.render_widget(settings, chunks[1]);
 
     // Spotify settings section
-    let spotify_block = Block::default()
-        .borders(Borders::ALL)
-        .border_style(Style::default().fg(Color::DarkGray))
-        .title(" Spotify ");
+    let spotify_block = theme::card("Spotify");
 
     let spotify_status = if state.spotify.connected {
-        Span::styled("CONNECTED", Style::default().fg(Color::Green))
+        Span::styled("CONNECTED", Style::default().fg(theme::SUCCESS))
     } else if state.spotify.error.is_some() {
-        Span::styled("ERROR", Style::default().fg(Color::Red))
+        Span::styled("ERROR", Style::default().fg(theme::ERROR))
     } else {
-        Span::styled("NOT CONFIGURED", Style::default().fg(Color::DarkGray))
+        Span::styled("NOT CONFIGURED", theme::secondary())
     };
 
     let spotify_text = vec![
         Line::from(vec![Span::raw("Status: "), spotify_status]),
         Line::from(vec![
             Span::raw("Press "),
-            Span::styled("S", Style::default().fg(Color::Cyan)),
+            Span::styled("S", theme::accent()),
             Span::raw(" to reset Spotify (clears tokens, restart to re-setup)"),
         ]),
     ];
@@ -643,18 +592,15 @@ fn render_settings_page(frame: &mut Frame, area: Rect, state: &AppState) {
     frame.render_widget(spotify_settings, chunks[2]);
 
     // Rate limit info
-    let rate_block = Block::default()
-        .borders(Borders::ALL)
-        .border_style(Style::default().fg(Color::DarkGray))
-        .title(" GitHub API Rate Limit ");
+    let rate_block = theme::card("GitHub API");
 
     let rate_limit = &state.github.rate_limit;
     let rate_color = if rate_limit.is_low() {
-        Color::Red
+        theme::ERROR
     } else if rate_limit.remaining < rate_limit.limit / 2 {
-        Color::Yellow
+        theme::WARNING
     } else {
-        Color::Green
+        theme::SUCCESS
     };
 
     let reset_time = rate_limit
@@ -672,7 +618,7 @@ fn render_settings_page(frame: &mut Frame, area: Rect, state: &AppState) {
         ]),
         Line::from(vec![
             Span::raw("Reset: "),
-            Span::styled(reset_time, Style::default().fg(Color::DarkGray)),
+            Span::styled(reset_time, theme::secondary()),
         ]),
     ];
 

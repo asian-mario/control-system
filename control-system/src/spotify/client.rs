@@ -50,6 +50,14 @@ impl SpotifyClient {
             return Ok(None);
         }
 
+        if resp.status().as_u16() == 429 {
+            let retry_after = parse_retry_after_seconds(&resp).unwrap_or(1);
+            return Err(anyhow!(
+                "Spotify rate limited; retry_after={}s",
+                retry_after
+            ));
+        }
+
         if !resp.status().is_success() {
             let status = resp.status();
             let text = resp.text().await.unwrap_or_default();
@@ -80,6 +88,14 @@ impl SpotifyClient {
             .send()
             .await?;
 
+        if resp.status().as_u16() == 429 {
+            let retry_after = parse_retry_after_seconds(&resp).unwrap_or(1);
+            return Err(anyhow!(
+                "Spotify rate limited; retry_after={}s",
+                retry_after
+            ));
+        }
+
         if !resp.status().is_success() {
             let status = resp.status();
             let text = resp.text().await.unwrap_or_default();
@@ -101,6 +117,14 @@ impl SpotifyClient {
             .body(reqwest::Body::from(vec![]))
             .send()
             .await?;
+
+        if resp.status().as_u16() == 429 {
+            let retry_after = parse_retry_after_seconds(&resp).unwrap_or(1);
+            return Err(anyhow!(
+                "Spotify rate limited; retry_after={}s",
+                retry_after
+            ));
+        }
 
         if !resp.status().is_success() {
             let status = resp.status();
@@ -124,6 +148,14 @@ impl SpotifyClient {
             .send()
             .await?;
 
+        if resp.status().as_u16() == 429 {
+            let retry_after = parse_retry_after_seconds(&resp).unwrap_or(1);
+            return Err(anyhow!(
+                "Spotify rate limited; retry_after={}s",
+                retry_after
+            ));
+        }
+
         if !resp.status().is_success() {
             let status = resp.status();
             let text = resp.text().await.unwrap_or_default();
@@ -143,6 +175,14 @@ impl SpotifyClient {
             .bearer_auth(&self.tokens.access_token)
             .send()
             .await?;
+
+        if resp.status().as_u16() == 429 {
+            let retry_after = parse_retry_after_seconds(&resp).unwrap_or(1);
+            return Err(anyhow!(
+                "Spotify rate limited; retry_after={}s",
+                retry_after
+            ));
+        }
 
         if !resp.status().is_success() {
             return Ok(Vec::new());
@@ -177,6 +217,13 @@ impl SpotifyClient {
 
         Ok(queue)
     }
+}
+
+fn parse_retry_after_seconds(resp: &reqwest::Response) -> Option<u64> {
+    resp.headers()
+        .get(reqwest::header::RETRY_AFTER)
+        .and_then(|v| v.to_str().ok())
+        .and_then(|s| s.trim().parse::<u64>().ok())
 }
 
 /// A track/episode in the queue

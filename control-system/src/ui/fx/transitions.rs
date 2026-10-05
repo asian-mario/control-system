@@ -3,22 +3,18 @@
 //! Simplified effects using only fade transitions that work with tachyonfx
 
 use ratatui::layout::Rect;
-use tachyonfx::{fx, Effect, Duration};
+use tachyonfx::{fx, Duration, Effect};
+
+use crate::ui::theme;
 
 /// Create a fade-in effect for page transitions
 pub fn fade_in() -> Effect {
-    fx::fade_from_fg(
-        ratatui::style::Color::Black,
-        Duration::from_millis(300),
-    )
+    fx::fade_from_fg(theme::BACKGROUND, Duration::from_millis(220))
 }
 
 /// Create a fade-out effect for page transitions
 pub fn fade_out() -> Effect {
-    fx::fade_to_fg(
-        ratatui::style::Color::Black,
-        Duration::from_millis(200),
-    )
+    fx::fade_to_fg(theme::BACKGROUND, Duration::from_millis(160))
 }
 
 /// Get a page transition effect based on direction

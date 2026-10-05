@@ -94,6 +94,7 @@ pub struct FxState {
     pub last_transition_frame: u64,
     pub transition_active: bool,
     pub pulse_phase: f32,
+    pub visualizer_phase: f32,
     pub shimmer_offset: f32,
 }
 
@@ -106,6 +107,7 @@ impl Default for FxState {
             last_transition_frame: 0,
             transition_active: false,
             pulse_phase: 0.0,
+            visualizer_phase: 0.0,
             shimmer_offset: 0.0,
         }
     }
@@ -124,6 +126,11 @@ impl FxState {
         if self.should_animate() {
             // Pulse animation (breathing effect)
             self.pulse_phase = (self.pulse_phase + delta_ms * 0.003) % (2.0 * std::f32::consts::PI);
+
+            // One complete word sequence and wave cycle every 14 seconds.
+            self.visualizer_phase = (self.visualizer_phase
+                + delta_ms * std::f32::consts::TAU / 14_000.0)
+                .rem_euclid(std::f32::consts::TAU);
 
             // Shimmer animation
             self.shimmer_offset = (self.shimmer_offset + delta_ms * 0.05) % 100.0;
@@ -148,6 +155,28 @@ impl FxState {
         } else {
             0.5
         }
+    }
+}
+
+#[cfg(test)]
+mod visualizer_phase_tests {
+    use super::FxState;
+
+    #[test]
+    fn visualizer_phase_freezes_with_paused_or_reduced_motion() {
+        let mut fx = FxState::default();
+        fx.tick(1_000.0);
+        let phase = fx.visualizer_phase;
+        assert!(phase > 0.0);
+
+        fx.animations_paused = true;
+        fx.tick(1_000.0);
+        assert_eq!(fx.visualizer_phase, phase);
+
+        fx.animations_paused = false;
+        fx.reduced_motion = true;
+        fx.tick(1_000.0);
+        assert_eq!(fx.visualizer_phase, phase);
     }
 }
 

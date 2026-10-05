@@ -27,6 +27,10 @@ impl SpotifyPoller {
         let (cmd_tx, mut cmd_rx) = mpsc::channel::<SpotifyCommand>(16);
 
         tokio::spawn(async move {
+            const PLAYING_POLL_EVERY: Duration = Duration::from_secs(2);
+            const IDLE_POLL_EVERY: Duration = Duration::from_secs(10);
+            const QUEUE_REFRESH_EVERY: Duration = Duration::from_secs(15);
+
             let tokens = match SpotifyAuth::load_tokens() {
                 Some(t) => t,
                 None => {
@@ -48,14 +52,35 @@ impl SpotifyPoller {
             let mut interval = tokio::time::interval(poll_interval);
             let mut cached_art_url: Option<String> = None;
             let mut cached_art: Option<AlbumArt> = None;
+            let mut queue_cache: Vec<super::state::QueueItem> = Vec::new();
+            let mut last_poll_at = tokio::time::Instant::now() - PLAYING_POLL_EVERY;
+            let mut poll_every = PLAYING_POLL_EVERY;
+            let mut last_queue_fetch_at = tokio::time::Instant::now() - QUEUE_REFRESH_EVERY;
+            let mut rate_limited_until: Option<tokio::time::Instant> = None;
 
             info!("Spotify poller started");
 
             loop {
                 tokio::select! {
                     _ = interval.tick() => {
+                        let now = tokio::time::Instant::now();
+
+                        if let Some(until) = rate_limited_until {
+                            if now < until {
+                                continue;
+                            }
+                            rate_limited_until = None;
+                        }
+
+                        if now.duration_since(last_poll_at) < poll_every {
+                            continue;
+                        }
+                        last_poll_at = now;
+
                         match client.get_playback().await {
                             Ok(Some(pb)) => {
+                                poll_every = PLAYING_POLL_EVERY;
+
                                 // Fetch album art if URL changed
                                 let art_url = pb.album_art_url.clone();
                                 if art_url != cached_art_url {
@@ -66,11 +91,26 @@ impl SpotifyPoller {
                                     cached_art_url = art_url;
                                 }
 
-                                // Fetch queue
-                                let queue = client.get_queue().await.unwrap_or_default()
-                                    .into_iter()
-                                    .map(|q| super::state::QueueItem { name: q.name, artist: q.artist })
-                                    .collect();
+                                // Fetch queue less frequently to reduce API pressure.
+                                if now.duration_since(last_queue_fetch_at) >= QUEUE_REFRESH_EVERY {
+                                    match client.get_queue().await {
+                                        Ok(queue) => {
+                                            queue_cache = queue
+                                                .into_iter()
+                                                .map(|q| super::state::QueueItem { name: q.name, artist: q.artist })
+                                                .collect();
+                                            last_queue_fetch_at = now;
+                                        }
+                                        Err(e) => {
+                                            if let Some(retry_after) = retry_after_from_error(&e) {
+                                                warn!("Spotify queue rate-limited; backing off for {}s", retry_after);
+                                                rate_limited_until = Some(now + Duration::from_secs(retry_after));
+                                            } else {
+                                                warn!("Spotify queue fetch error: {}", e);
+                                            }
+                                        }
+                                    }
+                                }
 
                                 let _ = state_tx.send(SpotifyState {
                                     player: PlayerState {
@@ -83,44 +123,105 @@ impl SpotifyPoller {
                                         album_art_url: pb.album_art_url,
                                         album_art: cached_art.clone(),
                                         last_updated: Some(chrono::Utc::now()),
-                                        queue,
+                                        queue: queue_cache.clone(),
                                     },
                                     connected: true,
                                     error: None,
+                                    rate_limited_until: None,
                                 });
                             }
                             Ok(None) => {
+                                poll_every = IDLE_POLL_EVERY;
+                                queue_cache.clear();
                                 let _ = state_tx.send(SpotifyState {
                                     player: PlayerState::default(),
                                     connected: true,
                                     error: None,
+                                    rate_limited_until: None,
                                 });
                             }
                             Err(e) => {
+                                let mut rl_until_utc = None;
+                                if let Some(retry_after) = retry_after_from_error(&e) {
+                                    warn!("Spotify playback rate-limited; backing off for {}s", retry_after);
+                                    rate_limited_until = Some(now + Duration::from_secs(retry_after));
+                                    rl_until_utc = Some(
+                                        chrono::Utc::now()
+                                            + chrono::Duration::seconds(retry_after as i64),
+                                    );
+                                }
                                 warn!("Spotify poll error: {}", e);
+                                let prev_state = state_tx.borrow().clone();
                                 let _ = state_tx.send(SpotifyState {
                                     connected: false,
                                     error: Some(e.to_string()),
-                                    ..state_tx.borrow().clone()
+                                    rate_limited_until: rl_until_utc,
+                                    ..prev_state
                                 });
                             }
                         }
                     }
                     Some(cmd) = cmd_rx.recv() => {
+                        // Commands should trigger a near-term playback refresh.
+                        poll_every = PLAYING_POLL_EVERY;
+                        last_poll_at = tokio::time::Instant::now() - PLAYING_POLL_EVERY;
+
                         match cmd {
                             SpotifyCommand::TogglePlayback => {
                                 let is_playing = state_tx.borrow().player.is_playing;
                                 if let Err(e) = client.toggle_playback(is_playing).await {
+                                    if let Some(retry_after) = retry_after_from_error(&e) {
+                                        warn!("Spotify toggle rate-limited; backing off for {}s", retry_after);
+                                        rate_limited_until = Some(tokio::time::Instant::now() + Duration::from_secs(retry_after));
+                                        let prev_state = state_tx.borrow().clone();
+                                        let _ = state_tx.send(SpotifyState {
+                                            connected: false,
+                                            error: Some(e.to_string()),
+                                            rate_limited_until: Some(
+                                                chrono::Utc::now()
+                                                    + chrono::Duration::seconds(retry_after as i64),
+                                            ),
+                                            ..prev_state
+                                        });
+                                    }
                                     error!("Spotify toggle error: {}", e);
                                 }
                             }
                             SpotifyCommand::NextTrack => {
                                 if let Err(e) = client.next_track().await {
+                                    if let Some(retry_after) = retry_after_from_error(&e) {
+                                        warn!("Spotify next rate-limited; backing off for {}s", retry_after);
+                                        rate_limited_until = Some(tokio::time::Instant::now() + Duration::from_secs(retry_after));
+                                        let prev_state = state_tx.borrow().clone();
+                                        let _ = state_tx.send(SpotifyState {
+                                            connected: false,
+                                            error: Some(e.to_string()),
+                                            rate_limited_until: Some(
+                                                chrono::Utc::now()
+                                                    + chrono::Duration::seconds(retry_after as i64),
+                                            ),
+                                            ..prev_state
+                                        });
+                                    }
                                     error!("Spotify next error: {}", e);
                                 }
                             }
                             SpotifyCommand::PrevTrack => {
                                 if let Err(e) = client.prev_track().await {
+                                    if let Some(retry_after) = retry_after_from_error(&e) {
+                                        warn!("Spotify prev rate-limited; backing off for {}s", retry_after);
+                                        rate_limited_until = Some(tokio::time::Instant::now() + Duration::from_secs(retry_after));
+                                        let prev_state = state_tx.borrow().clone();
+                                        let _ = state_tx.send(SpotifyState {
+                                            connected: false,
+                                            error: Some(e.to_string()),
+                                            rate_limited_until: Some(
+                                                chrono::Utc::now()
+                                                    + chrono::Duration::seconds(retry_after as i64),
+                                            ),
+                                            ..prev_state
+                                        });
+                                    }
                                     error!("Spotify prev error: {}", e);
                                 }
                             }
@@ -131,37 +232,71 @@ impl SpotifyPoller {
                         }
                         // After a command, fetch updated state quickly
                         tokio::time::sleep(Duration::from_millis(300)).await;
-                        if let Ok(Some(pb)) = client.get_playback().await {
-                            // Fetch album art if URL changed
-                            let art_url = pb.album_art_url.clone();
-                            if art_url != cached_art_url {
-                                cached_art = match &art_url {
-                                    Some(url) => fetch_album_art(&http_client, url).await,
-                                    None => None,
-                                };
-                                cached_art_url = art_url;
-                            }
+                        match client.get_playback().await {
+                            Ok(Some(pb)) => {
+                                // Fetch album art if URL changed
+                                let art_url = pb.album_art_url.clone();
+                                if art_url != cached_art_url {
+                                    cached_art = match &art_url {
+                                        Some(url) => fetch_album_art(&http_client, url).await,
+                                        None => None,
+                                    };
+                                    cached_art_url = art_url;
+                                }
 
-                            // Clone queue from previous state BEFORE calling send() to
-                            // avoid a deadlock: borrow() holds a read lock and
-                            // send() needs a write lock on the same RwLock.
-                            let prev_queue = state_tx.borrow().player.queue.clone();
-                            let _ = state_tx.send(SpotifyState {
-                                player: PlayerState {
-                                    is_playing: pb.is_playing,
-                                    track_name: pb.track_name,
-                                    artist_name: pb.artist_name,
-                                    album_name: pb.album_name,
-                                    progress_ms: pb.progress_ms,
-                                    duration_ms: pb.duration_ms,
-                                    album_art_url: pb.album_art_url,
-                                    album_art: cached_art.clone(),
-                                    last_updated: Some(chrono::Utc::now()),
-                                    queue: prev_queue,
-                                },
-                                connected: true,
-                                error: None,
-                            });
+                                // Clone queue from previous state BEFORE calling send() to
+                                // avoid a deadlock: borrow() holds a read lock and
+                                // send() needs a write lock on the same RwLock.
+                                let prev_queue = state_tx.borrow().player.queue.clone();
+                                let _ = state_tx.send(SpotifyState {
+                                    player: PlayerState {
+                                        is_playing: pb.is_playing,
+                                        track_name: pb.track_name,
+                                        artist_name: pb.artist_name,
+                                        album_name: pb.album_name,
+                                        progress_ms: pb.progress_ms,
+                                        duration_ms: pb.duration_ms,
+                                        album_art_url: pb.album_art_url,
+                                        album_art: cached_art.clone(),
+                                        last_updated: Some(chrono::Utc::now()),
+                                        queue: prev_queue,
+                                    },
+                                    connected: true,
+                                    error: None,
+                                    rate_limited_until: None,
+                                });
+                            }
+                            Ok(None) => {
+                                cached_art_url = None;
+                                cached_art = None;
+                                queue_cache.clear();
+                                poll_every = IDLE_POLL_EVERY;
+                                let _ = state_tx.send(SpotifyState {
+                                    player: PlayerState::default(),
+                                    connected: true,
+                                    error: None,
+                                    rate_limited_until: None,
+                                });
+                            }
+                            Err(e) => {
+                                let mut rl_until_utc = None;
+                                if let Some(retry_after) = retry_after_from_error(&e) {
+                                    warn!("Spotify post-command rate-limited; backing off for {}s", retry_after);
+                                    rate_limited_until = Some(tokio::time::Instant::now() + Duration::from_secs(retry_after));
+                                    rl_until_utc = Some(
+                                        chrono::Utc::now()
+                                            + chrono::Duration::seconds(retry_after as i64),
+                                    );
+                                }
+                                warn!("Spotify post-command poll error: {}", e);
+                                let prev_state = state_tx.borrow().clone();
+                                let _ = state_tx.send(SpotifyState {
+                                    connected: false,
+                                    error: Some(e.to_string()),
+                                    rate_limited_until: rl_until_utc,
+                                    ..prev_state
+                                });
+                            }
                         }
                     }
                 }
@@ -170,6 +305,15 @@ impl SpotifyPoller {
 
         (state_rx, cmd_tx)
     }
+}
+
+fn retry_after_from_error(err: &anyhow::Error) -> Option<u64> {
+    let msg = err.to_string();
+    let key = "retry_after=";
+    let idx = msg.find(key)? + key.len();
+    let rest = &msg[idx..];
+    let digits: String = rest.chars().take_while(|c| c.is_ascii_digit()).collect();
+    digits.parse::<u64>().ok()
 }
 
 /// Fetch album art from a URL and decode it into RGBA pixel data

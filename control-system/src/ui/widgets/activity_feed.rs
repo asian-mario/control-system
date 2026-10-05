@@ -1,26 +1,24 @@
 use ratatui::{
     layout::Rect,
-    style::{Color, Modifier, Style},
+    style::{Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, List, ListItem},
+    widgets::{List, ListItem},
     Frame,
 };
 use tachyonfx::Effect;
 
 use crate::app::AppState;
+use crate::ui::theme;
 use crate::util::time::format_relative;
 
 /// Render the activity feed widget
-pub fn render_activity_feed(frame: &mut Frame, area: Rect, state: &AppState, _effects: &mut Vec<Effect>) {
-    let block = Block::default()
-        .borders(Borders::ALL)
-        .border_style(Style::default().fg(Color::Cyan))
-        .title(Span::styled(
-            " Activity Feed ",
-            Style::default()
-                .fg(Color::Magenta)
-                .add_modifier(Modifier::BOLD),
-        ));
+pub fn render_activity_feed(
+    frame: &mut Frame,
+    area: Rect,
+    state: &AppState,
+    _effects: &mut Vec<Effect>,
+) {
+    let block = theme::card("Activity");
 
     if state.github.events.is_empty() {
         let empty_text = if state.github.status.is_fetching() {
@@ -31,7 +29,7 @@ pub fn render_activity_feed(frame: &mut Frame, area: Rect, state: &AppState, _ef
 
         let paragraph = ratatui::widgets::Paragraph::new(empty_text)
             .block(block)
-            .style(Style::default().fg(Color::DarkGray));
+            .style(theme::secondary());
         frame.render_widget(paragraph, area);
         return;
     }
@@ -54,20 +52,27 @@ pub fn render_activity_feed(frame: &mut Frame, area: Rect, state: &AppState, _ef
                 .unwrap_or(&event.repo_name);
 
             let style = if event.is_new {
-                Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)
+                Style::default()
+                    .fg(theme::SUCCESS)
+                    .add_modifier(Modifier::BOLD)
             } else {
                 Style::default()
             };
 
             let line = Line::from(vec![
                 Span::styled(format!("{} ", icon), style),
-                Span::styled(desc, Style::default().fg(Color::White)),
+                Span::styled(desc, theme::primary()),
                 Span::raw(" "),
-                Span::styled(repo_short, Style::default().fg(Color::Cyan)),
+                Span::styled(repo_short, theme::accent()),
                 Span::raw(" "),
-                Span::styled(time, Style::default().fg(Color::DarkGray)),
+                Span::styled(time, theme::secondary()),
                 if event.is_new {
-                    Span::styled(" NEW", Style::default().fg(Color::Green).add_modifier(Modifier::BOLD))
+                    Span::styled(
+                        "  •",
+                        Style::default()
+                            .fg(theme::SUCCESS)
+                            .add_modifier(Modifier::BOLD),
+                    )
                 } else {
                     Span::raw("")
                 },

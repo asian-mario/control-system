@@ -1,12 +1,13 @@
 use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout, Rect},
-    style::{Color, Modifier, Style},
+    style::Style,
     text::{Line, Span},
-    widgets::{Block, Borders, Clear, Paragraph},
+    widgets::{Clear, Paragraph},
     Frame,
 };
 
 use crate::app::actions::keybind_help;
+use crate::ui::theme;
 
 /// Render the help overlay
 pub fn render_help_overlay(frame: &mut Frame, area: Rect) {
@@ -16,37 +17,23 @@ pub fn render_help_overlay(frame: &mut Frame, area: Rect) {
     // Clear the area behind the popup
     frame.render_widget(Clear, popup_area);
 
-    let block = Block::default()
-        .borders(Borders::ALL)
-        .border_style(Style::default().fg(Color::Cyan))
-        .title(Span::styled(
-            " Help - Keyboard Controls ",
-            Style::default()
-                .fg(Color::Yellow)
-                .add_modifier(Modifier::BOLD),
-        ))
-        .style(Style::default().bg(Color::Black));
+    let block = theme::card("Keyboard Controls");
 
     let keybinds = keybind_help();
     let mut lines: Vec<Line> = vec![Line::from("")];
 
     for (key, desc) in keybinds {
         lines.push(Line::from(vec![
-            Span::styled(
-                format!("{:>10}", key),
-                Style::default()
-                    .fg(Color::Cyan)
-                    .add_modifier(Modifier::BOLD),
-            ),
+            Span::styled(format!("{:>10}", key), Style::default().fg(theme::ACCENT)),
             Span::raw("  "),
-            Span::styled(desc.to_string(), Style::default().fg(Color::White)),
+            Span::styled(desc.to_string(), theme::primary()),
         ]));
     }
 
     lines.push(Line::from(""));
     lines.push(Line::from(Span::styled(
         "Press ? or h to close",
-        Style::default().fg(Color::DarkGray),
+        theme::secondary(),
     )));
 
     let paragraph = Paragraph::new(lines)

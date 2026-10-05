@@ -2,23 +2,16 @@ use ratatui::{
     layout::Rect,
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, List, ListItem},
+    widgets::{List, ListItem},
     Frame,
 };
 
 use crate::app::AppState;
+use crate::ui::theme;
 
 /// Render the repository spotlight widget
 pub fn render_repo_spotlight(frame: &mut Frame, area: Rect, state: &AppState) {
-    let block = Block::default()
-        .borders(Borders::ALL)
-        .border_style(Style::default().fg(Color::Cyan))
-        .title(Span::styled(
-            " Top Repositories ",
-            Style::default()
-                .fg(Color::Yellow)
-                .add_modifier(Modifier::BOLD),
-        ));
+    let block = theme::card("Top Repositories");
 
     if state.github.repos.is_empty() {
         let empty_text = if state.github.status.is_fetching() {
@@ -29,22 +22,23 @@ pub fn render_repo_spotlight(frame: &mut Frame, area: Rect, state: &AppState) {
 
         let paragraph = ratatui::widgets::Paragraph::new(empty_text)
             .block(block)
-            .style(Style::default().fg(Color::DarkGray));
+            .style(theme::secondary());
         frame.render_widget(paragraph, area);
         return;
     }
 
     let top_repos = state.github.top_repos_by_stars(8);
-    
+
     let items: Vec<ListItem> = top_repos
         .iter()
         .enumerate()
         .map(|(i, repo)| {
             let rank_style = match i {
-                0 => Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD),
-                1 => Style::default().fg(Color::LightBlue),
-                2 => Style::default().fg(Color::LightMagenta),
-                _ => Style::default().fg(Color::DarkGray),
+                0 => Style::default()
+                    .fg(theme::WARNING)
+                    .add_modifier(Modifier::BOLD),
+                1 | 2 => theme::accent(),
+                _ => theme::secondary(),
             };
 
             let lang = repo.language.as_deref().unwrap_or("???");
@@ -59,23 +53,20 @@ pub fn render_repo_spotlight(frame: &mut Frame, area: Rect, state: &AppState) {
             let lines = vec![
                 Line::from(vec![
                     Span::styled(format!("#{:<2}", i + 1), rank_style),
-                    Span::styled(&repo.name, Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
+                    Span::styled(&repo.name, theme::title()),
                     Span::raw(" "),
                     Span::styled(format!("[{}]", lang), Style::default().fg(lang_color)),
                 ]),
                 Line::from(vec![
                     Span::raw("   "),
-                    Span::styled("*", Style::default().fg(Color::Yellow)),
+                    Span::styled("★", Style::default().fg(theme::WARNING)),
                     Span::styled(
                         format!("{:<5}", repo.stargazers_count),
-                        Style::default().fg(Color::Yellow),
+                        Style::default().fg(theme::WARNING),
                     ),
                     Span::styled("Y", Style::default()),
-                    Span::styled(
-                        format!("{:<4}", repo.forks_count),
-                        Style::default().fg(Color::Cyan),
-                    ),
-                    Span::styled(desc, Style::default().fg(Color::DarkGray)),
+                    Span::styled(format!("{:<4}", repo.forks_count), theme::accent()),
+                    Span::styled(desc, theme::secondary()),
                 ]),
             ];
 

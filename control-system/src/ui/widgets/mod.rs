@@ -8,3 +8,4 @@ pub mod repo_spotlight;
 pub mod spotify_player;
 pub mod status_bar;
 pub mod system_stats;
+pub mod visualizer;

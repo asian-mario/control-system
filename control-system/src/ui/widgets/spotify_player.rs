@@ -1,8 +1,8 @@
 use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout, Rect},
-    style::{Color, Modifier, Style},
+    style::{Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, Paragraph},
+    widgets::Paragraph,
     Frame,
 };
 use ratatui_image::protocol::StatefulProtocol;
@@ -10,6 +10,7 @@ use std::sync::Mutex;
 
 use crate::app::AppState;
 use crate::spotify::state::PlayerState;
+use crate::ui::theme;
 
 /// Area positions for clickable Spotify controls (set during render)
 pub struct SpotifyClickAreas {
@@ -77,25 +78,17 @@ pub fn render_spotify_player(
     state: &AppState,
     album_art_proto: &mut Option<StatefulProtocol>,
 ) {
-    let block = Block::default()
-        .borders(Borders::ALL)
-        .border_style(Style::default().fg(Color::Green))
-        .title(Span::styled(
-            " Spotify ",
-            Style::default()
-                .fg(Color::Green)
-                .add_modifier(Modifier::BOLD),
-        ));
+    let block = theme::card("Now Playing");
 
     if !state.spotify.connected {
-        let msg = if let Some(ref err) = state.spotify.error {
+        let msg = if let Some(secs) = state.spotify.retry_after_seconds() {
+            format!("Spotify rate-limited. Retry in {}s", secs)
+        } else if let Some(ref err) = state.spotify.error {
             format!("Spotify: {}", err)
         } else {
             "Not configured (press S in Settings to set up)".to_string()
         };
-        let paragraph = Paragraph::new(msg)
-            .block(block)
-            .style(Style::default().fg(Color::DarkGray));
+        let paragraph = Paragraph::new(msg).block(block).style(theme::secondary());
         frame.render_widget(paragraph, area);
         store_click_areas(SpotifyClickAreas {
             prev_area: None,
@@ -108,9 +101,14 @@ pub fn render_spotify_player(
     let player = &state.spotify.player;
 
     if player.track_name.is_empty() {
-        let paragraph = Paragraph::new("No track playing")
+        let no_track_msg = if let Some(secs) = state.spotify.retry_after_seconds() {
+            format!("No track playing (rate-limited, retry in {}s)", secs)
+        } else {
+            "No track playing".to_string()
+        };
+        let paragraph = Paragraph::new(no_track_msg)
             .block(block)
-            .style(Style::default().fg(Color::DarkGray));
+            .style(theme::secondary());
         frame.render_widget(paragraph, area);
         store_click_areas(SpotifyClickAreas {
             prev_area: None,
@@ -191,23 +189,19 @@ pub fn render_spotify_player(
         // Track name - BIGGEST: bold, underlined, on its own with space
         Line::from(Span::styled(
             truncate_str(&player.track_name, max_w.saturating_sub(1)),
-            Style::default()
-                .fg(Color::White)
-                .add_modifier(Modifier::BOLD | Modifier::UNDERLINED),
+            theme::title(),
         )),
         // Blank line to give the title visual weight
         Line::from(""),
         // Album name - second biggest
         Line::from(Span::styled(
             truncate_str(&player.album_name, max_w.saturating_sub(1)),
-            Style::default()
-                .fg(Color::Cyan)
-                .add_modifier(Modifier::BOLD),
+            theme::primary().add_modifier(Modifier::BOLD),
         )),
         // Artist name
         Line::from(Span::styled(
             truncate_str(&player.artist_name, max_w.saturating_sub(1)),
-            Style::default().fg(Color::Green),
+            theme::secondary(),
         )),
     ];
 
@@ -219,15 +213,13 @@ pub fn render_spotify_player(
     let max_qw = queue_area.width as usize;
     let mut queue_lines: Vec<Line> = vec![Line::from(Span::styled(
         "Up Next:",
-        Style::default()
-            .fg(Color::Yellow)
-            .add_modifier(Modifier::BOLD),
+        theme::secondary().add_modifier(Modifier::BOLD),
     ))];
 
     if player.queue.is_empty() {
         queue_lines.push(Line::from(Span::styled(
             "  nothing here yet.",
-            Style::default().fg(Color::DarkGray),
+            theme::secondary(),
         )));
     } else {
         for (i, item) in player.queue.iter().enumerate() {
@@ -239,7 +231,7 @@ pub fn render_spotify_player(
             );
             queue_lines.push(Line::from(Span::styled(
                 truncate_str(&entry, max_qw.saturating_sub(1)),
-                Style::default().fg(Color::DarkGray),
+                theme::secondary(),
             )));
         }
     }
@@ -269,12 +261,12 @@ fn render_progress_bar(frame: &mut Frame, area: Rect, player: &PlayerState) {
     let empty = bar_width.saturating_sub(filled);
 
     let line = Line::from(vec![
-        Span::styled(&time_left, Style::default().fg(Color::DarkGray)),
+        Span::styled(&time_left, theme::secondary()),
         Span::raw(" "),
-        Span::styled("#".repeat(filled), Style::default().fg(Color::Green)),
-        Span::styled("-".repeat(empty), Style::default().fg(Color::DarkGray)),
+        Span::styled("━".repeat(filled), theme::accent()),
+        Span::styled("─".repeat(empty), Style::default().fg(theme::DIVIDER)),
         Span::raw(" "),
-        Span::styled(&time_right, Style::default().fg(Color::DarkGray)),
+        Span::styled(&time_right, theme::secondary()),
     ]);
 
     frame.render_widget(Paragraph::new(line), area);
@@ -283,9 +275,9 @@ fn render_progress_bar(frame: &mut Frame, area: Rect, player: &PlayerState) {
 /// Render playback controls (clickable, tall for touchscreen)
 fn render_controls(frame: &mut Frame, area: Rect, player: &PlayerState) {
     let play_icon = if player.is_playing {
-        "  ||  "
+        "  ❚❚  "
     } else {
-        "  >>  "
+        "  ▶  "
     };
 
     let ctrl_layout = Layout::default()
@@ -307,23 +299,23 @@ fn render_controls(frame: &mut Frame, area: Rect, player: &PlayerState) {
         next_area: Some(ctrl_layout[5]),
     });
 
-    let btn_style = Style::default().bg(Color::DarkGray);
+    let btn_style = theme::selected();
 
     let prev = Paragraph::new(Line::from(Span::styled(
-        " |<< ",
-        btn_style.fg(Color::Cyan).add_modifier(Modifier::BOLD),
+        "  ◀◀  ",
+        btn_style.fg(theme::PRIMARY).add_modifier(Modifier::BOLD),
     )))
     .alignment(Alignment::Center);
 
     let toggle = Paragraph::new(Line::from(Span::styled(
         play_icon,
-        btn_style.fg(Color::Green).add_modifier(Modifier::BOLD),
+        btn_style.fg(theme::ACCENT).add_modifier(Modifier::BOLD),
     )))
     .alignment(Alignment::Center);
 
     let next = Paragraph::new(Line::from(Span::styled(
-        " >>| ",
-        btn_style.fg(Color::Cyan).add_modifier(Modifier::BOLD),
+        "  ▶▶  ",
+        btn_style.fg(theme::PRIMARY).add_modifier(Modifier::BOLD),
     )))
     .alignment(Alignment::Center);
 

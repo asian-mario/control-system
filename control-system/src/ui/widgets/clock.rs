@@ -3,26 +3,19 @@ use ratatui::{
     layout::{Alignment, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, Paragraph},
+    widgets::Paragraph,
     Frame,
 };
 
 use crate::app::AppState;
+use crate::ui::theme;
 
 /// Render the clock widget
 pub fn render_clock(frame: &mut Frame, area: Rect, state: &AppState) {
-    let block = Block::default()
-        .borders(Borders::ALL)
-        .border_style(Style::default().fg(Color::Cyan))
-        .title(Span::styled(
-            " Clock ",
-            Style::default()
-                .fg(Color::Cyan)
-                .add_modifier(Modifier::BOLD),
-        ));
+    let block = theme::card("Today");
 
     let now = Local::now();
-    
+
     // Use pulse value for subtle animation
     let pulse = state.fx.pulse_value();
     let time_color = if state.fx.should_animate() {
@@ -30,7 +23,7 @@ pub fn render_clock(frame: &mut Frame, area: Rect, state: &AppState) {
         let brightness = (200.0 + (pulse * 55.0)) as u8;
         Color::Rgb(brightness, brightness, brightness)
     } else {
-        Color::White
+        theme::PRIMARY
     };
 
     let time_str = now.format("%H:%M:%S").to_string();
@@ -40,18 +33,10 @@ pub fn render_clock(frame: &mut Frame, area: Rect, state: &AppState) {
     let text = vec![
         Line::from(Span::styled(
             &time_str,
-            Style::default()
-                .fg(time_color)
-                .add_modifier(Modifier::BOLD),
+            Style::default().fg(time_color).add_modifier(Modifier::BOLD),
         )),
-        Line::from(Span::styled(
-            &date_str,
-            Style::default().fg(Color::Cyan),
-        )),
-        Line::from(Span::styled(
-            &full_date,
-            Style::default().fg(Color::DarkGray),
-        )),
+        Line::from(Span::styled(&date_str, theme::accent())),
+        Line::from(Span::styled(&full_date, theme::secondary())),
     ];
 
     let paragraph = Paragraph::new(text)
